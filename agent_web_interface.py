@@ -327,6 +327,7 @@ def create_templates():
                 <select name="output_format">
                     <option value="markdown" {{ "selected" if config.output_format == "markdown" else "" }}>Markdown</option>
                     <option value="json" {{ "selected" if config.output_format == "json" else "" }}>JSON</option>
+                    <option value="html" {{ "selected" if config.output_format == "html" else "" }}>HTML</option>
                 </select>
             </div>
             

@@ -155,7 +155,16 @@ class SlideGeneratorAgent:
         """Add a new PDF processing job to the queue."""
         pdf_name = Path(pdf_path).stem
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"{pdf_name}_{timestamp}.md"
+        
+        output_format = self.config.get("output_format", "markdown").lower()
+        if output_format == "json":
+            extension = ".json"
+        elif output_format == "html":
+            extension = ".html"
+        else:
+            extension = ".md"
+        
+        output_filename = f"{pdf_name}_{timestamp}{extension}"
         output_path = os.path.join(self.config["output_directory"], output_filename)
         
         job = ProcessingJob(pdf_path, output_path, self.config)
@@ -207,9 +216,13 @@ class SlideGeneratorAgent:
             if not slides:
                 raise Exception("No slides generated")
             
-            if job.config["output_format"].lower() == "json":
+            output_format = job.config["output_format"].lower()
+            if output_format == "json":
                 content = SlideFormatter.format_as_json(slides)
                 job.output_path = job.output_path.replace('.md', '.json')
+            elif output_format == "html":
+                content = SlideFormatter.format_as_html(slides)
+                job.output_path = job.output_path.replace('.md', '.html')
             else:
                 content = SlideFormatter.format_as_markdown(slides)
             

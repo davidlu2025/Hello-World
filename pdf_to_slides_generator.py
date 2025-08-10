@@ -412,13 +412,188 @@ class SlideFormatter:
             })
         
         return json.dumps(slides_data, indent=2)
+    
+    @staticmethod
+    def format_as_html(slides: List[SlideContent]) -> str:
+        """Format slides as HTML presentation."""
+        html_content = []
+        
+        html_content.append("""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Paper Presentation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .presentation-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .slide {
+            background: white;
+            margin: 30px 0;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            page-break-after: always;
+            min-height: 500px;
+        }
+        .slide-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        .slide-number {
+            color: #667eea;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .slide-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 10px 0 0 0;
+            line-height: 1.3;
+        }
+        .slide-section {
+            margin: 25px 0;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .content-list {
+            list-style: none;
+            padding: 0;
+        }
+        .content-list li {
+            margin: 12px 0;
+            padding: 8px 0 8px 20px;
+            border-left: 3px solid #667eea;
+            background: #f8f9fa;
+            border-radius: 0 6px 6px 0;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .visual-elements {
+            background: #e8f4fd;
+            border-left: 4px solid #3498db;
+        }
+        .speaker-notes {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            font-style: italic;
+        }
+        .navigation {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .nav-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 0 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .nav-button:hover {
+            background: #5a6fd8;
+        }
+        @media print {
+            .navigation { display: none; }
+            .slide { margin: 0; box-shadow: none; }
+        }
+        @media (max-width: 768px) {
+            .presentation-container { padding: 10px; }
+            .slide { padding: 20px; }
+            .slide-title { font-size: 24px; }
+        }
+    </style>
+    <script>
+        function goToSlide(slideNumber) {
+            document.getElementById('slide-' + slideNumber).scrollIntoView({behavior: 'smooth'});
+        }
+        function printPresentation() {
+            window.print();
+        }
+    </script>
+</head>
+<body>
+    <div class="navigation">
+        <button class="nav-button" onclick="printPresentation()">Print</button>
+        <button class="nav-button" onclick="window.location.reload()">Refresh</button>
+    </div>
+    <div class="presentation-container">""")
+        
+        for slide in slides:
+            html_content.append(f'        <div class="slide" id="slide-{slide.number}">')
+            html_content.append('            <div class="slide-header">')
+            html_content.append(f'                <div class="slide-number">Slide {slide.number}</div>')
+            html_content.append(f'                <h1 class="slide-title">{slide.title}</h1>')
+            html_content.append('            </div>')
+            
+            if slide.content:
+                html_content.append('            <div class="slide-section">')
+                html_content.append('                <h2 class="section-title">Content</h2>')
+                html_content.append('                <ul class="content-list">')
+                for point in slide.content:
+                    html_content.append(f'                    <li>{point}</li>')
+                html_content.append('                </ul>')
+                html_content.append('            </div>')
+            
+            if slide.visual_elements:
+                html_content.append('            <div class="slide-section">')
+                html_content.append('                <h2 class="section-title">Visual Elements</h2>')
+                html_content.append('                <ul class="content-list visual-elements">')
+                for element in slide.visual_elements:
+                    html_content.append(f'                    <li>{element}</li>')
+                html_content.append('                </ul>')
+                html_content.append('            </div>')
+            
+            if slide.speaker_notes:
+                html_content.append('            <div class="slide-section">')
+                html_content.append('                <h2 class="section-title">Speaker Notes</h2>')
+                html_content.append('                <ul class="content-list speaker-notes">')
+                for note in slide.speaker_notes:
+                    html_content.append(f'                    <li>{note}</li>')
+                html_content.append('                </ul>')
+                html_content.append('            </div>')
+            
+            html_content.append('        </div>')
+        
+        html_content.append("""    </div>
+</body>
+</html>""")
+        
+        return "\n".join(html_content)
 
 def main():
     """Main function to run the PDF to slides generator."""
     parser = argparse.ArgumentParser(description="Generate presentation slides from research paper PDF")
     parser.add_argument("pdf_path", help="Path to the research paper PDF")
     parser.add_argument("--output", "-o", default="slides.md", help="Output file path")
-    parser.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown", help="Output format")
+    parser.add_argument("--format", "-f", choices=["markdown", "json", "html"], default="markdown", help="Output format")
     parser.add_argument("--audience", "-a", choices=["academic", "general", "educational"], default="academic", help="Target audience")
     
     args = parser.parse_args()
@@ -447,8 +622,10 @@ def main():
     
     if args.format == "markdown":
         output_content = SlideFormatter.format_as_markdown(slides)
-    else:
+    elif args.format == "json":
         output_content = SlideFormatter.format_as_json(slides)
+    else:
+        output_content = SlideFormatter.format_as_html(slides)
     
     with open(args.output, 'w', encoding='utf-8') as f:
         f.write(output_content)
