@@ -55,11 +55,34 @@ class PDFProcessor:
                     if page_text:
                         text_parts.append(f"[PAGE {page_num}]\n{page_text}\n")
                 
-                self.text_content = "\n".join(text_parts)
+                self.text_content = self.clean_text("\n".join(text_parts))
                 return self.text_content
         except Exception as e:
             print(f"Error extracting text from PDF: {e}")
             return ""
+    
+    def clean_text(self, text: str) -> str:
+        """Clean extracted text by removing headers, footers, and page markers."""
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            if re.match(r'.*@.*\.dev\s*\d*$', line):
+                continue
+            if line.startswith('http'):
+                continue
+            if re.match(r'\[PAGE \d+\]', line):
+                cleaned_lines.append(line)
+                continue
+            if len(line) < 10 and not re.match(r'^\d+\.?\s*[A-Z]', line):
+                continue
+            
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
     
     def identify_sections(self) -> List[PaperSection]:
         """Identify major sections in the research paper."""
@@ -67,14 +90,14 @@ class PDFProcessor:
             self.extract_text()
         
         section_patterns = [
-            (r'(?i)^(abstract|summary)\s*$', 'Abstract'),
-            (r'(?i)^(introduction|1\.\s*introduction)\s*$', 'Introduction'),
-            (r'(?i)^(literature\s+review|related\s+work|background|2\.\s*)', 'Literature Review'),
-            (r'(?i)^(methodology|methods|approach|3\.\s*)', 'Methodology'),
-            (r'(?i)^(results|findings|4\.\s*)', 'Results'),
-            (r'(?i)^(discussion|analysis|5\.\s*)', 'Discussion'),
-            (r'(?i)^(conclusion|conclusions|6\.\s*)', 'Conclusion'),
-            (r'(?i)^(references|bibliography)', 'References'),
+            (r'(?i)^abstract\s*$', 'Abstract'),
+            (r'(?i)^1\.?\s*introduction\s*$', 'Introduction'),
+            (r'(?i)^2\.?\s*(definitions|foundations|related\s+work|background)\s*$', 'Literature Review'),
+            (r'(?i)^3\.?\s*(what\s+to\s+evolve|methodology|methods|approach)\s*$', 'Methodology'),
+            (r'(?i)^4\.?\s*(when\s+to\s+evolve|results|findings|experiments)\s*$', 'Results'),
+            (r'(?i)^5\.?\s*(how\s+to\s+evolve|discussion|analysis)\s*$', 'Discussion'),
+            (r'(?i)^6\.?\s*(conclusion|conclusions|future\s+work)\s*$', 'Conclusion'),
+            (r'(?i)^(references|bibliography)\s*$', 'References'),
         ]
         
         sections = []
@@ -119,8 +142,22 @@ class PDFProcessor:
                 page_numbers=current_pages
             ))
         
-        self.sections = sections
-        return sections
+        self.sections = self.consolidate_sections(sections)
+        return self.sections
+    
+    def consolidate_sections(self, sections: List[PaperSection]) -> List[PaperSection]:
+        """Consolidate duplicate sections and merge their content."""
+        consolidated = {}
+        
+        for section in sections:
+            if section.title in consolidated:
+                existing = consolidated[section.title]
+                existing.content += "\n" + section.content
+                existing.page_numbers.extend(section.page_numbers)
+            else:
+                consolidated[section.title] = section
+        
+        return list(consolidated.values())
 
 class SlideGenerator:
     """Generates slides based on the extracted paper content."""
@@ -139,14 +176,25 @@ class SlideGenerator:
             'publication': 'Publication Venue'
         }
         
-        for section in self.sections[:2]:
+        for section in self.sections[:3]:
             content = section.content
             lines = content.split('\n')
             
-            for line in lines[:10]:
+            for line in lines[:15]:
                 line = line.strip()
-                if len(line) > 20 and not line.lower().startswith(('abstract', 'introduction')):
+                if (20 < len(line) < 200 and 
+                    not line.lower().startswith(('abstract', 'introduction', 'paper', 'status')) and
+                    not re.match(r'^\d+\.', line) and
+                    not line.startswith('http')):
                     metadata['title'] = line
+                    break
+            
+            for line in lines[:20]:
+                line = line.strip()
+                if (re.search(r'[A-Z][a-z]+ [A-Z][a-z]+', line) and 
+                    len(line) < 100 and
+                    not line.startswith('http')):
+                    metadata['authors'] = line
                     break
         
         return metadata
@@ -180,6 +228,15 @@ class SlideGenerator:
                 score += 1
             if re.search(r'(?i)(result|finding|conclusion|show|demonstrate)', sentence):
                 score += 1
+            if re.search(r'(?i)(model|algorithm|learning|training|performance|accuracy|evaluation)', sentence):
+                score += 1
+            if re.search(r'(?i)(experiment|analysis|study|research|approach|method)', sentence):
+                score += 1
+            if re.search(r'(?i)(propose|introduce|present|develop|framework|architecture)', sentence):
+                score += 1
+            if len(sentence) > 100:
+                score += 1
+            
             scored_sentences.append((score, sentence))
         
         scored_sentences.sort(reverse=True, key=lambda x: x[0])
