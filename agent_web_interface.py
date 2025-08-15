@@ -98,6 +98,8 @@ def config():
         config_updates['audience'] = request.form.get('audience', 'academic')
         config_updates['max_concurrent_jobs'] = int(request.form.get('max_concurrent_jobs', 2))
         config_updates['check_interval'] = int(request.form.get('check_interval', 30))
+        config_updates['llm_enabled'] = request.form.get('llm_enabled', 'true') == 'true'
+        config_updates['llm_model'] = request.form.get('llm_model', 'gpt-3.5-turbo')
         
         watch_dirs = request.form.get('watch_directories', '').split('\n')
         config_updates['watch_directories'] = [d.strip() for d in watch_dirs if d.strip()]
@@ -337,6 +339,23 @@ def create_templates():
                     <option value="academic" {{ "selected" if config.audience == "academic" else "" }}>Academic</option>
                     <option value="general" {{ "selected" if config.audience == "general" else "" }}>General</option>
                     <option value="educational" {{ "selected" if config.audience == "educational" else "" }}>Educational</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>LLM Analysis:</label>
+                <select name="llm_enabled">
+                    <option value="true" {{ "selected" if config.llm_enabled else "" }}>Enabled</option>
+                    <option value="false" {{ "selected" if not config.llm_enabled else "" }}>Disabled</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>LLM Model:</label>
+                <select name="llm_model">
+                    <option value="gpt-3.5-turbo" {{ "selected" if config.llm_model == "gpt-3.5-turbo" else "" }}>GPT-3.5 Turbo</option>
+                    <option value="gpt-4" {{ "selected" if config.llm_model == "gpt-4" else "" }}>GPT-4</option>
+                    <option value="gpt-4-turbo" {{ "selected" if config.llm_model == "gpt-4-turbo" else "" }}>GPT-4 Turbo</option>
                 </select>
             </div>
             

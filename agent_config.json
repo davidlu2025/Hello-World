@@ -1,0 +1,20 @@
+{
+  "watch_directories": [
+    "./input_pdfs"
+  ],
+  "output_directory": "./generated_slides",
+  "processed_directory": "./processed_pdfs",
+  "log_directory": "./logs",
+  "auto_process": true,
+  "output_format": "markdown",
+  "audience": "academic",
+  "check_interval": 30,
+  "max_concurrent_jobs": 2,
+  "notification_webhook": null,
+  "email_notifications": false,
+  "llm_enabled": true,
+  "llm_model": "gpt-3.5-turbo",
+  "llm_temperature": 0.3,
+  "llm_max_tokens": 1000,
+  "fallback_to_rules": true
+}

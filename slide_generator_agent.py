@@ -210,7 +210,14 @@ class SlideGeneratorAgent:
             if not sections:
                 raise Exception("No sections found in PDF")
             
-            generator = SlideGenerator(sections, job.config.get("audience", "academic"))
+            use_llm = job.config.get('llm_enabled', True)
+            llm_config = {
+                'model': job.config.get('llm_model', 'gpt-3.5-turbo'),
+                'temperature': job.config.get('llm_temperature', 0.3),
+                'max_tokens': job.config.get('llm_max_tokens', 1000)
+            } if use_llm else None
+            
+            generator = SlideGenerator(sections, job.config.get("audience", "academic"), use_llm, llm_config)
             slides = generator.generate_slides()
             
             if not slides:

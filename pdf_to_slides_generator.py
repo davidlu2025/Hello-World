@@ -12,13 +12,15 @@ from typing import Dict, List, Tuple, Optional
 import re
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
 try:
     import PyPDF2
     import pdfplumber
+    import openai
 except ImportError:
     print("Required packages not installed. Please run:")
-    print("pip install PyPDF2 pdfplumber")
+    print("pip install PyPDF2 pdfplumber openai")
     sys.exit(1)
 
 @dataclass
@@ -159,16 +161,200 @@ class PDFProcessor:
         
         return list(consolidated.values())
 
+class LLMAnalyzer:
+    """Handles LLM-based content analysis for slide generation."""
+    
+    def __init__(self, model: str = "gpt-3.5-turbo", temperature: float = 0.3, max_tokens: int = 1000):
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.client = None
+        self._initialize_client()
+    
+    def _initialize_client(self):
+        """Initialize OpenAI client with API key from environment."""
+        api_key = os.getenv('OPENAI_API_KEY')
+        if api_key:
+            try:
+                self.client = openai.OpenAI(api_key=api_key)
+            except Exception as e:
+                logging.warning(f"Failed to initialize OpenAI client: {e}")
+                self.client = None
+        else:
+            logging.info("OPENAI_API_KEY not found in environment variables")
+    
+    def is_available(self) -> bool:
+        """Check if LLM analysis is available."""
+        return self.client is not None
+    
+    def analyze_section(self, section_content: str, section_type: str, audience: str = "academic") -> List[str]:
+        """Analyze a paper section and extract key points for slides."""
+        if not self.is_available():
+            return []
+        
+        prompts = {
+            "abstract": f"""Analyze this research paper abstract and extract 4-5 key points suitable for a slide presentation for {audience} audience.
+Focus on: research problem, methodology overview, main findings, and significance.
+Return only bullet points, each on a new line starting with '-'.
+
+Abstract content:
+{section_content}""",
+            
+            "introduction": f"""Analyze this research paper introduction and extract 5-6 key points for a slide presentation for {audience} audience.
+Focus on: problem context, motivation, research gap, objectives, and contributions.
+Return only bullet points, each on a new line starting with '-'.
+
+Introduction content:
+{section_content}""",
+            
+            "methodology": f"""Analyze this research paper methodology section and extract 5-6 key points for a slide presentation for {audience} audience.
+Focus on: research approach, data collection, experimental design, tools/techniques, and evaluation metrics.
+Return only bullet points, each on a new line starting with '-'.
+
+Methodology content:
+{section_content}""",
+            
+            "results": f"""Analyze this research paper results section and extract 5-6 key points for a slide presentation for {audience} audience.
+Focus on: main findings, statistical significance, performance metrics, comparisons, and notable outcomes.
+Return only bullet points, each on a new line starting with '-'.
+
+Results content:
+{section_content}""",
+            
+            "discussion": f"""Analyze this research paper discussion section and extract 4-5 key points for a slide presentation for {audience} audience.
+Focus on: interpretation of results, implications, limitations, and broader impact.
+Return only bullet points, each on a new line starting with '-'.
+
+Discussion content:
+{section_content}""",
+            
+            "conclusion": f"""Analyze this research paper conclusion section and extract 4-5 key points for a slide presentation for {audience} audience.
+Focus on: main contributions, summary of findings, future work, and practical implications.
+Return only bullet points, each on a new line starting with '-'.
+
+Conclusion content:
+{section_content}""",
+            
+            "generic": f"""Analyze this research paper section and extract 4-5 key points for a slide presentation for {audience} audience.
+Focus on the most important and relevant information for the presentation.
+Return only bullet points, each on a new line starting with '-'.
+
+Section content:
+{section_content}"""
+        }
+        
+        prompt = prompts.get(section_type.lower(), prompts["generic"])
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            key_points = []
+            for line in content.split('\n'):
+                line = line.strip()
+                if line.startswith('-'):
+                    key_points.append(line[1:].strip())
+                elif line and not line.startswith('#'):
+                    key_points.append(line)
+            
+            return key_points[:6]
+            
+        except Exception as e:
+            logging.error(f"LLM analysis failed for {section_type}: {e}")
+            return []
+    
+    def extract_metadata(self, text_content: str) -> Dict[str, str]:
+        """Extract paper metadata using LLM analysis."""
+        if not self.is_available():
+            return {}
+        
+        prompt = f"""Analyze this research paper text and extract the following metadata:
+- Title: The main title of the paper
+- Authors: The authors' names
+- Affiliation: The institutional affiliation
+- Publication: The publication venue or journal
+
+Return the information in this exact format:
+Title: [extracted title]
+Authors: [extracted authors]
+Affiliation: [extracted affiliation]
+Publication: [extracted publication]
+
+If any information is not clearly available, use "Not specified" for that field.
+
+Paper text (first 2000 characters):
+{text_content[:2000]}"""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=300
+            )
+            
+            content = response.choices[0].message.content.strip()
+            metadata = {
+                'title': 'Research Paper Presentation',
+                'authors': 'Authors',
+                'affiliation': 'Institution',
+                'publication': 'Publication Venue'
+            }
+            
+            for line in content.split('\n'):
+                line = line.strip()
+                if line.startswith('Title:'):
+                    metadata['title'] = line[6:].strip()
+                elif line.startswith('Authors:'):
+                    metadata['authors'] = line[8:].strip()
+                elif line.startswith('Affiliation:'):
+                    metadata['affiliation'] = line[12:].strip()
+                elif line.startswith('Publication:'):
+                    metadata['publication'] = line[12:].strip()
+            
+            return metadata
+            
+        except Exception as e:
+            logging.error(f"LLM metadata extraction failed: {e}")
+            return {}
+
+
 class SlideGenerator:
     """Generates slides based on the extracted paper content."""
     
-    def __init__(self, paper_sections: List[PaperSection], target_audience: str = "academic"):
+    def __init__(self, paper_sections: List[PaperSection], target_audience: str = "academic", use_llm: bool = True, llm_config: Dict = None):
         self.sections = paper_sections
         self.target_audience = target_audience
         self.slides = []
+        self.use_llm = use_llm
+        
+        if self.use_llm:
+            llm_config = llm_config or {}
+            self.llm_analyzer = LLMAnalyzer(
+                model=llm_config.get('model', 'gpt-3.5-turbo'),
+                temperature=llm_config.get('temperature', 0.3),
+                max_tokens=llm_config.get('max_tokens', 1000)
+            )
+            if not self.llm_analyzer.is_available():
+                logging.warning("LLM not available, falling back to rule-based extraction")
+                self.use_llm = False
+        else:
+            self.llm_analyzer = None
         
     def extract_paper_metadata(self) -> Dict[str, str]:
         """Extract title, authors, and other metadata from the paper."""
+        if self.use_llm and self.llm_analyzer and self.llm_analyzer.is_available():
+            full_text = '\n'.join([section.content for section in self.sections[:3]])
+            llm_metadata = self.llm_analyzer.extract_metadata(full_text)
+            if llm_metadata:
+                return llm_metadata
+        
         metadata = {
             'title': 'Research Paper Presentation',
             'authors': 'Authors',
@@ -214,8 +400,13 @@ class SlideGenerator:
             speaker_notes=["Welcome audience", "Introduce the research topic"]
         )
     
-    def extract_key_points(self, text: str, max_points: int = 6) -> List[str]:
-        """Extract key points from a text section."""
+    def extract_key_points(self, text: str, section_type: str = "generic", max_points: int = 6) -> List[str]:
+        """Extract key points from a text section using LLM or rule-based approach."""
+        if self.use_llm and self.llm_analyzer and self.llm_analyzer.is_available():
+            llm_points = self.llm_analyzer.analyze_section(text, section_type, self.target_audience)
+            if llm_points:
+                return llm_points[:max_points]
+        
         sentences = re.split(r'[.!?]+', text)
         sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
         
@@ -272,7 +463,7 @@ class SlideGenerator:
     
     def generate_abstract_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for abstract section."""
-        key_points = self.extract_key_points(section.content, 4)
+        key_points = self.extract_key_points(section.content, "abstract", 4)
         return SlideContent(
             number=slide_num,
             title="Research Overview",
@@ -283,7 +474,7 @@ class SlideGenerator:
     
     def generate_introduction_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for introduction section."""
-        key_points = self.extract_key_points(section.content, 5)
+        key_points = self.extract_key_points(section.content, "introduction", 5)
         return SlideContent(
             number=slide_num,
             title="Research Context & Motivation",
@@ -294,7 +485,7 @@ class SlideGenerator:
     
     def generate_methodology_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for methodology section."""
-        key_points = self.extract_key_points(section.content, 6)
+        key_points = self.extract_key_points(section.content, "methodology", 6)
         return SlideContent(
             number=slide_num,
             title="Methodology & Approach",
@@ -305,7 +496,7 @@ class SlideGenerator:
     
     def generate_results_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for results section."""
-        key_points = self.extract_key_points(section.content, 6)
+        key_points = self.extract_key_points(section.content, "results", 6)
         return SlideContent(
             number=slide_num,
             title="Key Findings & Results",
@@ -316,7 +507,7 @@ class SlideGenerator:
     
     def generate_discussion_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for discussion section."""
-        key_points = self.extract_key_points(section.content, 5)
+        key_points = self.extract_key_points(section.content, "discussion", 5)
         return SlideContent(
             number=slide_num,
             title="Discussion & Implications",
@@ -327,7 +518,7 @@ class SlideGenerator:
     
     def generate_conclusion_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for conclusion section."""
-        key_points = self.extract_key_points(section.content, 4)
+        key_points = self.extract_key_points(section.content, "conclusion", 4)
         return SlideContent(
             number=slide_num,
             title="Conclusions & Future Work",
@@ -338,7 +529,7 @@ class SlideGenerator:
     
     def generate_generic_slide(self, section: PaperSection, slide_num: int) -> SlideContent:
         """Generate slide for other sections."""
-        key_points = self.extract_key_points(section.content, 5)
+        key_points = self.extract_key_points(section.content, "generic", 5)
         return SlideContent(
             number=slide_num,
             title=section.title,
@@ -595,6 +786,9 @@ def main():
     parser.add_argument("--output", "-o", default="slides.md", help="Output file path")
     parser.add_argument("--format", "-f", choices=["markdown", "json", "html"], default="markdown", help="Output format")
     parser.add_argument("--audience", "-a", choices=["academic", "general", "educational"], default="academic", help="Target audience")
+    parser.add_argument("--use-llm", action="store_true", help="Use LLM for intelligent content analysis")
+    parser.add_argument("--llm-model", default="gpt-3.5-turbo", help="LLM model to use (default: gpt-3.5-turbo)")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM and use rule-based extraction only")
     
     args = parser.parse_args()
     
@@ -602,7 +796,15 @@ def main():
         print(f"Error: PDF file '{args.pdf_path}' not found.")
         sys.exit(1)
     
+    use_llm = args.use_llm and not args.no_llm
+    if use_llm and not os.getenv('OPENAI_API_KEY'):
+        print("Warning: OPENAI_API_KEY not found in environment. Falling back to rule-based extraction.")
+        use_llm = False
+    
     print(f"Processing PDF: {args.pdf_path}")
+    print(f"Using LLM analysis: {use_llm}")
+    if use_llm:
+        print(f"LLM model: {args.llm_model}")
     
     processor = PDFProcessor(args.pdf_path)
     sections = processor.identify_sections()
@@ -615,7 +817,13 @@ def main():
     for section in sections:
         print(f"  - {section.title}")
     
-    generator = SlideGenerator(sections, args.audience)
+    llm_config = {
+        'model': args.llm_model,
+        'temperature': 0.3,
+        'max_tokens': 1000
+    } if use_llm else None
+    
+    generator = SlideGenerator(sections, args.audience, use_llm, llm_config)
     slides = generator.generate_slides()
     
     print(f"Generated {len(slides)} slides")
